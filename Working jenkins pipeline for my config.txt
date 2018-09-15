@@ -1,0 +1,48 @@
+node{
+    
+    stage('GIT clone')
+    {
+        git credentialsId: 'git', url: 'https://github.com/NewtechGAM/gradle-web-app.git'
+        
+    }
+    stage('Gradle Clean Build')
+    {
+        sh '/opt/gradle/bin/gradle clean build'
+    }
+    stage('Build Docker Image In Docker Server')
+    {
+        sshagent(['41b1bdec-2d7d-439d-bce7-7067c539f480'])
+        {
+            sh 'scp -o StrictHostKeyChecking=no build/libs/Jenkins-Pipeline.war Dockerfile tomcat-users.xml gnan@192.168.1.111:~/docker'
+            sh 'ssh -o StrictHostKeyChecking=no gnan@192.168.1.111 sudo docker build -t gnan10/gradle-web-app /home/gnan/docker'
+    
+        }
+    }
+    stage('Logging Docker Hub In')
+    {
+        sshagent(['41b1bdec-2d7d-439d-bce7-7067c539f480'])
+        {
+             withCredentials([string(credentialsId: 'dockerpassword', variable: 'v_dockerpassword')])
+                {
+                    sh 'ssh gnan@192.168.1.111 sudo docker login -u gnan10 -p ${v_dockerpassword}'
+                }
+            sh 'ssh gnan@192.168.1.111 sudo docker push gnan10/gradle-web-app'
+        }
+
+    }
+	stage('Running The Docker Container')
+	{
+		def stop_container = 'sudo docker container stop gradle-app-container'
+		def delete_container = 'sudo docker rm gradle-web-app'
+		def delete_image = 'sudo docker rmi -f gnan10/gradle-web-app'
+		def run_container = 'sudo docker run -p 9320:8080 --name gradle-app-container gnan10/gradle-web-app'
+		sshagent(['41b1bdec-2d7d-439d-bce7-7067c539f480'])
+        {
+			sh "ssh gnan@192.168.1.111 ${stop_container} || true"
+			sh "ssh gnan@192.168.1.111 ${delete_container} || true"
+			sh "ssh gnan@192.168.1.111 ${delete_image} || true"
+			sh "ssh gnan@192.168.1.111 ${run_container}"
+		}
+	}
+    
+}
